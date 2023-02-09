@@ -1,0 +1,131 @@
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+#####################
+# rules_js & rules_ts
+#####################
+
+http_archive(
+    name = "aspect_rules_js",
+    sha256 = "9f51475dd2f99abb015939b1cf57ab5f15ef36ca6d2a67104450893fd0aa5c8b",
+    strip_prefix = "rules_js-1.16.0",
+    url = "https://github.com/aspect-build/rules_js/archive/refs/tags/v1.16.0.tar.gz",
+)
+
+http_archive(
+    name = "aspect_rules_ts",
+    sha256 = "7d964d57c6e9a54b0ce20f27e5ea84e5b42b6db2148ab7eb18d7110a082380de",
+    strip_prefix = "rules_ts-1.2.4",
+    url = "https://github.com/aspect-build/rules_ts/releases/download/v1.2.4/rules_ts-v1.2.4.tar.gz",
+)
+
+load("@aspect_rules_js//js:repositories.bzl", "rules_js_dependencies")
+
+rules_js_dependencies()
+
+load("@aspect_rules_ts//ts:repositories.bzl", "rules_ts_dependencies")
+
+rules_ts_dependencies(ts_version_from = "//:package.json")
+
+load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
+
+nodejs_register_toolchains(
+    name = "nodejs",
+    node_version = "16.9.0",
+)
+
+load("@aspect_rules_js//npm:npm_import.bzl", "npm_translate_lock")
+
+npm_translate_lock(
+    name = "npm",
+    bins = {
+        # derived from "bin" attribute in node_modules/next/package.json
+        "next": {
+            "next": "./dist/bin/next",
+        },
+    },
+    npmrc = "//:.npmrc",
+    pnpm_lock = "//:pnpm-lock.yaml",
+    verify_node_modules_ignored = "//:.bazelignore",
+)
+
+load("@npm//:repositories.bzl", "npm_repositories")
+
+npm_repositories()
+
+###
+# Setup rules_pkg
+###
+http_archive(
+    name = "rules_python",
+    sha256 = "a868059c8c6dd6ad45a205cca04084c652cfe1852e6df2d5aca036f6e5438380",
+    strip_prefix = "rules_python-0.14.0",
+    url = "https://github.com/bazelbuild/rules_python/archive/refs/tags/0.14.0.tar.gz",
+)
+
+http_archive(
+    name = "rules_pkg",
+    sha256 = "eea0f59c28a9241156a47d7a8e32db9122f3d50b505fae0f33de6ce4d9b61834",
+    urls = ["https://github.com/bazelbuild/rules_pkg/releases/download/0.8.0/rules_pkg-0.8.0.tar.gz"],
+)
+
+load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
+
+rules_pkg_dependencies()
+
+###
+# Setup rules_docker
+# rules_docker does not work with M1 macs due to ancient rules_go version.
+###
+
+# WORKAROUND START
+# See: https://github.com/bazelbuild/rules_docker/pull/2035
+http_archive(
+    name = "io_bazel_rules_go",
+    sha256 = "099a9fb96a376ccbbb7d291ed4ecbdfd42f6bc822ab77ae6f1b5cb9e914e94fa",
+    urls = ["https://github.com/bazelbuild/rules_go/releases/download/v0.35.0/rules_go-v0.35.0.zip"],
+)
+
+load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
+
+go_rules_dependencies()
+
+go_register_toolchains(version = "1.19.3")
+# WORKAROUND END
+
+http_archive(
+    name = "io_bazel_rules_docker",
+    sha256 = "b1e80761a8a8243d03ebca8845e9cc1ba6c82ce7c5179ce2b295cd36f7e394bf",
+    urls = ["https://github.com/bazelbuild/rules_docker/releases/download/v0.25.0/rules_docker-v0.25.0.tar.gz"],
+)
+
+load("@io_bazel_rules_docker//repositories:repositories.bzl", rules_docker_repositories = "repositories")
+
+rules_docker_repositories()
+
+load("@io_bazel_rules_docker//repositories:deps.bzl", rules_docker_deps = "deps")
+
+rules_docker_deps()
+
+load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
+
+container_pull(
+    name = "debian_arm64",
+    architecture = "arm64",
+    digest = "sha256:bd276cb1059f6502e342d3052a4c2767f2b3a0196508f5c2c34ce6da4a15b104",
+    registry = "docker.io",
+    repository = "debian",
+)
+
+container_pull(
+    name = "debian_amd64",
+    architecture = "amd64",
+    digest = "sha256:9a67b70d0ba1d7c7690f917eedd8d24974dd8fd493205368b1e555a90c954208",
+    registry = "docker.io",
+    repository = "debian",
+)
+
+http_archive(
+    name = "io_bazel_stardoc",
+    sha256 = "3fd8fec4ddec3c670bd810904e2e33170bedfe12f90adf943508184be458c8bb",
+    urls = ["https://github.com/bazelbuild/stardoc/releases/download/0.5.3/stardoc-0.5.3.tar.gz"],
+)

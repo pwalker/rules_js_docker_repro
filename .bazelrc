@@ -1,0 +1,2 @@
+# https://docs.aspect.build/rules/aspect_rules_ts/docs/troubleshooting#non-deterministic-behavior
+build --strategy=TsProject=sandboxed

@@ -1,0 +1,7 @@
+node_modules
+apps/alpha/node_modules
+packages/one/node_modules
+bazel-out
+bazel-bin
+bazel-next.js
+bazel-testlogs

@@ -1,0 +1,146 @@
+load("@aspect_rules_js//js:defs.bzl", "js_test")
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@npm//:defs.bzl", "npm_link_all_packages")
+load("//bazel:next.bzl", "next")
+load("@npm//apps/alpha:next/package_json.bzl", next_bin = "bin")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("//:js_image_layer.bzl", "js_image_layer")
+load("@io_bazel_rules_docker//container:container.bzl", "container_image")
+load("@io_bazel_rules_docker//container:layer.bzl", "container_layer")
+
+npm_link_all_packages(name = "node_modules")
+
+SRC_PATTERNS = [
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.js",
+    "**/*.jsx",
+]
+
+TEST_PATTERNS = [
+    "**/*.test.tsx",
+    "**/*.test.ts",
+    "**/*.spec.tsx",
+    "**/*.spec.ts",
+]
+
+CONFIG_PATTERNS = [
+    "*.json",
+    "*.config.js",
+]
+
+filegroup(
+    name = "src",
+    srcs = glob(
+        include = SRC_PATTERNS,  # + CONFIG_PATTERNS,
+        exclude = TEST_PATTERNS,
+    ),
+)
+
+next_bin.next_binary(
+    name = "next_js_binary",
+)
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+    visibility = ["//visibility:public"],
+    deps = ["//:tsconfig"],
+)
+
+BUILD_DEPS = [
+    ":node_modules/@nextjs-example/one",
+    ":node_modules/@types/is-even",
+    ":node_modules/@types/node",
+    ":node_modules/@types/react",
+    ":node_modules/@types/react-dom",
+    ":node_modules/is-even",
+    ":node_modules/next",
+    ":node_modules/react",
+    ":node_modules/react-dom",
+    ":node_modules/typescript",
+]
+
+# Run `bazel build //apps/alpha:next` to build (equivalent to running `next build`).
+#
+# It is recommended that you use [ibazel](https://github.com/bazelbuild/bazel-watcher)
+# to run the devserver targets.
+#
+# Run `ibazel run //apps/alpha:next_dev` to run the development server in watch mode
+# (equivalent to running `next dev`).
+#
+# Run `ibazel run //apps/alpha:next_start` to run the production server in watch mode
+# (equivalent to running `next start`).
+next(
+    name = "next",
+    srcs = [
+        ":src",
+        "//apps/alpha/public",
+        "//apps/alpha/styles",
+    ],
+    data = BUILD_DEPS + [
+        "next.config.js",
+        "package.json",
+        ":tsconfig",
+        "//:tsconfig",  # TODO: kinda weird that I need to include both here, but the next() helper doesn't include all of :tsconfig deps in its own srcs I think?
+    ],
+    next_bin = "./node_modules/.bin/next",
+    next_js_binary = ":next_js_binary",
+)
+
+# A smoke test on the artifact produced by the :next target
+js_test(
+    name = "build_smoke_test",
+    chdir = package_name(),
+    data = [":next"],
+    entry_point = "build_smoke_test.js",
+)
+
+build_test(
+    name = "build_test",
+    targets = [
+        ":next",
+        # Not build testing the `:next_export` target since this `next export` writes back to the `.next` directory which
+        # causes issues with trying to write to an input. See https://github.com/vercel/next.js/issues/43344.
+        # TODO: fix in Next.js (https://github.com/vercel/next.js/issues/43344) or find work-around.
+        # ":next_export",
+    ],
+)
+
+# Image
+js_image_layer(
+    name = "layers",
+    binary = ":next_start",
+    root = "/app",
+    # FIXME: fails with
+    # File "/mnt/engflow/worker/work/0/exec/bazel-out/k8-opt-exec-41DC9EB7-ST-f4b2833703dd/bin/layers.build_tar.runfiles/rules_pkg/pkg/private/tar/tar_writer.py", line 241, in add_file
+    # IsADirectoryError: [Errno 21] Is a directory: 'bazel-out/k8-fastbuild-ST-4a519fd6d3e4/bin/node_modules/.aspect_rules_js/ansi-styles@4.3.0/node_modules/color-convert'
+    tags = ["no-remote-exec"],
+    visibility = ["//visibility:__pkg__"],
+)
+
+container_layer(
+    name = "app_layer",
+    tars = [":layers/app.tar"],
+)
+
+container_layer(
+    name = "node_modules_layer",
+    tars = [":layers/node_modules.tar"],
+)
+
+container_image(
+    name = "image",
+    architecture = "amd64",  # or arm64
+
+    # Since js_binary depends on bash we have to bring in a base image that has bash
+    base = "@debian_amd64//image",  # or "@debian_arm64//image", if you are on an arm machine
+    # This is going to be /{root of js_image_layer}/{package_name()}/{name of js_binary}.sh
+    cmd = ["/app/apps/alpha/next_start.sh"],
+    entrypoint = ["bash"],
+    layers = [
+        ":app_layer",
+        ":node_modules_layer",
+    ],
+    workdir = "/app",  # Added this
+)
